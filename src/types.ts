@@ -2,7 +2,7 @@ import type { Sandbox } from '@cloudflare/sandbox';
 
 /**
  * Environment bindings for the OpenClaw Worker
-*/
+ */
 export interface OpenClawEnv {
   Sandbox: DurableObjectNamespace<Sandbox>;
   ASSETS: Fetcher; // Assets binding for admin UI static files
@@ -34,8 +34,8 @@ export interface OpenClawEnv {
   CF_ACCESS_TEAM_DOMAIN?: string; // e.g., 'myteam.cloudflareaccess.com'
   CF_ACCESS_AUD?: string; // Application Audience (AUD) tag
   // R2 credentials for Sandbox SDK backup/restore (set via wrangler secret)
-R2_ACCESS_KEY_ID?: string;
-R2_SECRET_ACCESS_KEY?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
   CLOUDFLARE_ACCOUNT_ID?: string; // Cloudflare account ID for R2 presigned URLs
   BACKUP_BUCKET_NAME?: string; // R2 bucket name for backup storage
   // Browser Rendering binding for CDP shim
