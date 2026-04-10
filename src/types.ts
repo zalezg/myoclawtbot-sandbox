@@ -1,30 +1,81 @@
-import type { DurableObjectNamespace, R2Bucket, Fetcher } from '@cloudflare/workers-types';
+import type { Sandbox } from '@cloudflare/sandbox';
 
 /**
- * OpenClaw 运行环境接口定义
- */
+ * Environment bindings for the OpenClaw Worker
+*/
 export interface OpenClawEnv {
-  // --- 资源绑定 (Bindings)  ---
-  Sandbox: DurableObjectNamespace;     // 容器实例命名空间
-  BACKUP_BUCKET: R2Bucket;             // R2 存储桶绑定，用于存放备份文件 [cite: 1, 4]
-  BROWSER: any;                        // 浏览器渲染绑定 
-  ASSETS: Fetcher;                     // 静态资产绑定（由 Vite 构建） 
-
-  // --- 加密密钥 (Secrets) [cite: 1, 9] ---
-  // R2 持久化所需 (用于容器内部通过 S3 协议上传)
-  R2_ACCESS_KEY_ID?: string;
-  R2_SECRET_ACCESS_KEY?: string;
-  CLOUDFLARE_ACCOUNT_ID?: string;
-  BACKUP_BUCKET_NAME?: string;         // 默认应为 "myoclawtbot-data"
-
-  // AI 服务供应商密钥
+  Sandbox: DurableObjectNamespace<Sandbox>;
+  ASSETS: Fetcher; // Assets binding for admin UI static files
+  BACKUP_BUCKET: R2Bucket; // R2 bucket for Sandbox SDK backup/restore
+  // Cloudflare AI Gateway configuration (preferred)
+  CF_AI_GATEWAY_ACCOUNT_ID?: string; // Cloudflare account ID for AI Gateway
+  CF_AI_GATEWAY_GATEWAY_ID?: string; // AI Gateway ID
+  CLOUDFLARE_AI_GATEWAY_API_KEY?: string; // API key for requests through the gateway
+  CF_AI_GATEWAY_MODEL?: string; // Override model: "provider/model-id" e.g. "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+  // Legacy AI Gateway configuration (still supported for backward compat)
+  AI_GATEWAY_API_KEY?: string; // API key for the provider configured in AI Gateway
+  AI_GATEWAY_BASE_URL?: string; // AI Gateway URL (e.g., https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/anthropic)
+  // Direct provider configuration
   ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_BASE_URL?: string;
   OPENAI_API_KEY?: string;
-  MOLTBOT_GATEWAY_TOKEN?: string;      // 网关鉴权令牌 [cite: 8]
+  MOLTBOT_GATEWAY_TOKEN?: string; // Gateway token (mapped to OPENCLAW_GATEWAY_TOKEN for container)
+  DEV_MODE?: string; // Set to 'true' for local dev (skips CF Access auth + openclaw device pairing)
+  E2E_TEST_MODE?: string; // Set to 'true' for E2E tests (skips CF Access auth but keeps device pairing)
+  DEBUG_ROUTES?: string; // Set to 'true' to enable /debug/* routes
+  SANDBOX_SLEEP_AFTER?: string; // How long before sandbox sleeps: 'never' (default), or duration like '10m', '1h'
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_DM_POLICY?: string;
+  DISCORD_BOT_TOKEN?: string;
+  DISCORD_DM_POLICY?: string;
+  SLACK_BOT_TOKEN?: string;
+  SLACK_APP_TOKEN?: string;
+  // Cloudflare Access configuration for admin routes
+  CF_ACCESS_TEAM_DOMAIN?: string; // e.g., 'myteam.cloudflareaccess.com'
+  CF_ACCESS_AUD?: string; // Application Audience (AUD) tag
+  // R2 credentials for Sandbox SDK backup/restore (set via wrangler secret)
+R2_ACCESS_KEY_ID?: string;
+R2_SECRET_ACCESS_KEY?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string; // Cloudflare account ID for R2 presigned URLs
+  BACKUP_BUCKET_NAME?: string; // R2 bucket name for backup storage
+  // Browser Rendering binding for CDP shim
+  BROWSER?: Fetcher;
+  CDP_SECRET?: string; // Shared secret for CDP endpoint authentication
+  WORKER_URL?: string; // Public URL of the worker (for CDP endpoint)
 
-  // 可选配置
-  CRON_WAKE_AHEAD_MINUTES?: string;    // 提前唤醒时间（分钟） [cite: 5]
-  CF_ACCESS_TEAM_DOMAIN?: string;
-  CF_ACCESS_AUD?: string;
-  WORKER_URL?: string;
+  // Cron wake-ahead: wake container before OpenClaw cron jobs fire
+  CRON_WAKE_AHEAD_MINUTES?: string; // Minutes before a cron job to wake the container (default: 10)
+}
+
+/**
+ * Authenticated user from Cloudflare Access
+ */
+export interface AccessUser {
+  email: string;
+  name?: string;
+}
+
+/**
+ * Hono app environment type
+ */
+export type AppEnv = {
+  Bindings: OpenClawEnv;
+  Variables: {
+    sandbox: Sandbox;
+    accessUser?: AccessUser;
+  };
+};
+
+/**
+ * JWT payload from Cloudflare Access
+ */
+export interface JWTPayload {
+  aud: string[];
+  email: string;
+  exp: number;
+  iat: number;
+  iss: string;
+  name?: string;
+  sub: string;
+  type: string;
 }
