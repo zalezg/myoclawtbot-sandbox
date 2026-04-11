@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "myoclawtbot-sandbox",
   "main": "src/index.ts",
-  "compatibility_date": "2025-05-06",
+  "compatibility_date": "2026-04-10",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,
@@ -74,7 +74,7 @@
   // Adjust the interval to match your needs. Every 1 minute ensures
   // jobs are never missed by more than 1 minute.
   "triggers": {
-    "crons": ["*/5 * * * *"],
+    "crons": ["* * * * *"],
   },
   // Secrets to configure via `wrangler secret put`:
   //
