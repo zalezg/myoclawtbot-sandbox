@@ -73,6 +73,9 @@
   // if any job is scheduled within the lead time (default: 10 minutes).
   // Adjust the interval to match your needs. Every 1 minute ensures
   // jobs are never missed by more than 1 minute.
+  //
+  // Optional: set AUTO_BACKUP_INTERVAL_MINUTES to change how often the
+  // worker creates automatic R2 snapshots (default: 5 minutes).
   "triggers": {
     "crons": ["* * * * *"],
   },

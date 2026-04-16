@@ -45,6 +45,7 @@ export interface OpenClawEnv {
 
   // Cron wake-ahead: wake container before OpenClaw cron jobs fire
   CRON_WAKE_AHEAD_MINUTES?: string; // Minutes before a cron job to wake the container (default: 10)
+  AUTO_BACKUP_INTERVAL_MINUTES?: string; // Minutes between automatic R2 backups (default: 5)
 }
 
 /**

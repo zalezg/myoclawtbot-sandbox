@@ -2,7 +2,12 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { createAccessMiddleware } from '../auth';
 import { ensureGateway, findExistingGatewayProcess, killGateway, waitForProcess } from '../gateway';
-import { createSnapshot, getLastBackupId, signalRestoreNeeded } from '../persistence';
+import {
+  createSnapshot,
+  getLastBackupCreatedAtMs,
+  getLastBackupId,
+  signalRestoreNeeded,
+} from '../persistence';
 
 // CLI commands can take 10-15 seconds to complete due to WebSocket connection overhead
 const CLI_TIMEOUT_MS = 20000;
@@ -204,11 +209,15 @@ adminApi.get('/storage', async (c) => {
   if (!c.env.CLOUDFLARE_ACCOUNT_ID) missing.push('CLOUDFLARE_ACCOUNT_ID');
 
   const lastBackupId = hasCredentials ? await getLastBackupId(c.env.BACKUP_BUCKET) : null;
+  const lastBackupCreatedAtMs = hasCredentials
+    ? await getLastBackupCreatedAtMs(c.env.BACKUP_BUCKET)
+    : null;
 
   return c.json({
     configured: hasCredentials,
     missing: missing.length > 0 ? missing : undefined,
     lastBackupId,
+    lastSync: lastBackupCreatedAtMs ? new Date(lastBackupCreatedAtMs).toISOString() : null,
     message: hasCredentials
       ? 'R2 storage is configured. Your data will persist across container restarts via SDK snapshots.'
       : 'R2 storage is not configured. Paired devices and conversations will be lost when the container restarts.',
@@ -236,6 +245,7 @@ adminApi.post('/storage/sync', async (c) => {
       success: true,
       message: 'Snapshot created successfully',
       backupId: handle.id,
+      lastSync: new Date(handle.createdAtMs).toISOString(),
       debug: { mountState, dirContents },
     });
   } catch (error) {

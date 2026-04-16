@@ -2,6 +2,7 @@ import { getSandbox } from '@cloudflare/sandbox';
 import type { OpenClawEnv } from '../types';
 import { buildSandboxOptions } from '../index';
 import { ensureGateway } from '../gateway';
+import { getAutoBackupIntervalMs, maybeAutoBackup } from '../persistence';
 import { shouldWakeContainer, DEFAULT_LEAD_TIME_MS, CRON_STORE_R2_KEY } from './wake';
 
 /**
@@ -17,9 +18,27 @@ import { shouldWakeContainer, DEFAULT_LEAD_TIME_MS, CRON_STORE_R2_KEY } from './
  * Configure the check interval in wrangler.jsonc triggers.crons (default: every 1 minute).
  */
 export async function handleScheduled(env: OpenClawEnv): Promise<void> {
+  const intervalMs = getAutoBackupIntervalMs(env.AUTO_BACKUP_INTERVAL_MINUTES);
+  const sandbox = getSandbox(env.Sandbox, 'openclaw', buildSandboxOptions(env));
+
+  try {
+    const backupResult = await maybeAutoBackup(sandbox, env.BACKUP_BUCKET, intervalMs);
+    if (backupResult.created) {
+      console.log(
+        `[CRON] Auto backup created: ${backupResult.handle?.id ?? '(unknown)'} at ${
+          backupResult.handle?.createdAtMs ?? Date.now()
+        }`,
+      );
+    } else {
+      console.log(`[CRON] Auto backup skipped: ${backupResult.skippedReason ?? 'not due'}`);
+    }
+  } catch (error) {
+    console.error('[CRON] Auto backup failed:', error);
+  }
+
   const cronStoreObject = await env.BACKUP_BUCKET.get(CRON_STORE_R2_KEY);
   if (!cronStoreObject) {
-    console.log('[CRON] No cron store found in R2, skipping');
+    console.log('[CRON] No cron store found in R2, skipping wake check');
     return;
   }
 
@@ -37,7 +56,6 @@ export async function handleScheduled(env: OpenClawEnv): Promise<void> {
   const deltaMinutes = ((earliestRun - nowMs) / 60_000).toFixed(1);
   console.log(`[CRON] Cron job due in ${deltaMinutes}m, waking container`);
 
-  const sandbox = getSandbox(env.Sandbox, 'openclaw', buildSandboxOptions(env));
   await ensureGateway(sandbox, env);
   console.log('[CRON] Container woken successfully');
 }

@@ -4,9 +4,17 @@ const BACKUP_DIR = '/home/openclaw';
 const HANDLE_KEY = 'backup-handle.json';
 
 const RESTORE_NEEDED_KEY = 'restore-needed';
+const DEFAULT_AUTO_BACKUP_INTERVAL_MS = 5 * 60 * 1000;
+
+export interface StoredBackupHandle {
+  id: string;
+  dir: string;
+  createdAtMs: number;
+}
 
 // Per-isolate flag for fast path (avoid R2 read on every request)
 let restored = false;
+let snapshotInFlight: Promise<StoredBackupHandle> | null = null;
 
 /**
  * Signal that a restore is needed (e.g. after gateway restart).
@@ -23,13 +31,24 @@ export function clearPersistenceCache(): void {
   restored = false;
 }
 
-async function getStoredHandle(bucket: R2Bucket): Promise<{ id: string; dir: string } | null> {
+async function getStoredHandle(bucket: R2Bucket): Promise<StoredBackupHandle | null> {
   const obj = await bucket.get(HANDLE_KEY);
   if (!obj) return null;
-  return obj.json();
+  try {
+    const raw = (await obj.json()) as Partial<StoredBackupHandle>;
+    if (!raw || typeof raw !== 'object') return null;
+    if (typeof raw.id !== 'string' || typeof raw.dir !== 'string') return null;
+    return {
+      id: raw.id,
+      dir: raw.dir,
+      createdAtMs: typeof raw.createdAtMs === 'number' ? raw.createdAtMs : 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
-async function storeHandle(bucket: R2Bucket, handle: { id: string; dir: string }): Promise<void> {
+async function storeHandle(bucket: R2Bucket, handle: StoredBackupHandle): Promise<void> {
   await bucket.put(HANDLE_KEY, JSON.stringify(handle));
 }
 
@@ -93,6 +112,14 @@ export async function restoreIfNeeded(sandbox: Sandbox, bucket: R2Bucket): Promi
   }
 }
 
+export function getAutoBackupIntervalMs(intervalMinutes?: string): number {
+  const parsed = parseInt(intervalMinutes || '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_AUTO_BACKUP_INTERVAL_MS;
+  }
+  return parsed * 60 * 1000;
+}
+
 /**
  * Create a new snapshot of /home/openclaw (config + workspace + skills).
  *
@@ -104,10 +131,10 @@ export async function restoreIfNeeded(sandbox: Sandbox, bucket: R2Bucket): Promi
  * /tmp, or /var/tmp. The Dockerfile sets HOME=/home/openclaw and symlinks
  * /root/.openclaw and /root/clawd there.
  */
-export async function createSnapshot(
+async function createSnapshotInternal(
   sandbox: Sandbox,
   bucket: R2Bucket,
-): Promise<{ id: string; dir: string }> {
+): Promise<StoredBackupHandle> {
   // Delete previous backup objects from R2
   const previousHandle = await getStoredHandle(bucket);
   if (previousHandle) {
@@ -130,9 +157,58 @@ export async function createSnapshot(
     ttl: 604800, // 7 days
   });
 
-  await storeHandle(bucket, handle);
+  const record: StoredBackupHandle = {
+    id: handle.id,
+    dir: handle.dir,
+    createdAtMs: Date.now(),
+  };
+
+  await storeHandle(bucket, record);
   console.log(`[persistence] Backup ${handle.id} created in ${Date.now() - t0}ms`);
-  return handle;
+  return record;
+}
+
+async function runSnapshotExclusive(
+  sandbox: Sandbox,
+  bucket: R2Bucket,
+): Promise<StoredBackupHandle> {
+  if (snapshotInFlight) {
+    return snapshotInFlight;
+  }
+
+  snapshotInFlight = createSnapshotInternal(sandbox, bucket).finally(() => {
+    snapshotInFlight = null;
+  });
+
+  return snapshotInFlight;
+}
+
+export async function createSnapshot(
+  sandbox: Sandbox,
+  bucket: R2Bucket,
+): Promise<StoredBackupHandle> {
+  return runSnapshotExclusive(sandbox, bucket);
+}
+
+export async function maybeAutoBackup(
+  sandbox: Sandbox,
+  bucket: R2Bucket,
+  intervalMs: number = DEFAULT_AUTO_BACKUP_INTERVAL_MS,
+): Promise<{ created: boolean; handle?: StoredBackupHandle; skippedReason?: string }> {
+  const lastHandle = await getStoredHandle(bucket);
+  const createdAtMs = lastHandle?.createdAtMs ?? 0;
+  if (createdAtMs > 0) {
+    const ageMs = Date.now() - createdAtMs;
+    if (ageMs < intervalMs) {
+      return {
+        created: false,
+        skippedReason: `last backup only ${Math.round(ageMs / 1000)}s ago`,
+      };
+    }
+  }
+
+  const handle = await runSnapshotExclusive(sandbox, bucket);
+  return { created: true, handle };
 }
 
 /**
@@ -141,4 +217,10 @@ export async function createSnapshot(
 export async function getLastBackupId(bucket: R2Bucket): Promise<string | null> {
   const handle = await getStoredHandle(bucket);
   return handle?.id ?? null;
+}
+
+export async function getLastBackupCreatedAtMs(bucket: R2Bucket): Promise<number | null> {
+  const handle = await getStoredHandle(bucket);
+  if (!handle || handle.createdAtMs <= 0) return null;
+  return handle.createdAtMs;
 }
