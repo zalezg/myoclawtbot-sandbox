@@ -154,7 +154,7 @@ async function createSnapshotInternal(
   const t0 = Date.now();
   const handle = await sandbox.createBackup({
     dir: BACKUP_DIR,
-    ttl: 604800, // 7 days
+    ttl: 259200, // 3 days
   });
 
   const record: StoredBackupHandle = {
