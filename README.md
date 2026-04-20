@@ -223,6 +223,7 @@ R2 storage uses a backup/restore approach for simplicity:
 **During operation:**
 - A cron job runs every 5 minutes to sync the moltbot config to R2
 - You can also trigger a manual backup from the admin UI at `/_admin/`
+- Backup snapshots are retained for 3 days by default, and the retention window is controlled in `src/persistence.ts`
 
 **In the admin UI:**
 - When R2 is configured, you'll see "Last backup: [timestamp]"
